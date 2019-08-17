@@ -19,6 +19,7 @@
 #Marabou File
 from .MarabouNetworkNNet import *
 from .MarabouNetworkTF import *
+from .MarabouNetwork_K_StepsTF import *
 
 def read_nnet(filename, sbt=False):
     """
@@ -49,6 +50,9 @@ def read_tf(filename, inputName=None, outputName=None, savedModel=False, savedMo
     """
     return MarabouNetworkTF(filename, inputName, outputName, savedModel, savedModelTags)
 
+
+def read_tf_k_steps(filename, K = 2 , inputName=None, outputName=None, savedModel=False, savedModelTags=[]):
+    return MarabouNetwork_K_StepsTF(filename, K, inputName, outputName, savedModel, savedModelTags)
 
 
 def load_query(filename, verbose=True, timeout=0):
