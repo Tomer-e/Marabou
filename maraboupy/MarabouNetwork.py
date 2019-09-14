@@ -136,13 +136,15 @@ class MarabouNetwork:
         """
         ipq = MarabouCore.InputQuery()
         ipq.setNumberOfVariables(self.numVars)
-
+        print ("num vars = ", self.numVars)
         for e in self.equList:
             eq = MarabouCore.Equation(e.EquationType)
             for (c, v) in e.addendList:
                 assert v < self.numVars
                 eq.addAddend(c, v)
             eq.setScalar(e.scalar)
+            # eq.dump()
+
             ipq.addEquation(eq)
 
         for r in self.reluList:
@@ -178,6 +180,7 @@ class MarabouNetwork:
                     to how an input query was solved.
         """
         ipq = self.getMarabouQuery()
+
         # ipq.getEquations()
         vals, stats = MarabouCore.solve(ipq, filename, timeout)
         if verbose:
@@ -193,6 +196,9 @@ class MarabouNetwork:
 
                 for i in range(self.outputVars.size):
                     print("output {} = {}".format(i, vals[self.outputVars.item(i)]))
+                    # print("self.outputVars.item(i) =", self.outputVars.item(i))
+                # print("vals =", vals)
+                # print("self.outputVars.size =", self.outputVars.size)
 
         return [vals, stats]
 
