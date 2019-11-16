@@ -192,7 +192,8 @@ class MarabouNetwork:
                 print("SAT")
                 for j in range(len(self.inputVars)):
                     for i in range(self.inputVars[j].size):
-                        print("input {} = {}".format(i, vals[self.inputVars[j].item(i)]))
+                        ## TODO - changed from the original Marabou, check how to get back to the original..
+                        print("input {} = {}".format(j, vals[self.inputVars[j].item(i)]))
 
                 for i in range(self.outputVars.size):
                     print("output {} = {}".format(i, vals[self.outputVars.item(i)]))
