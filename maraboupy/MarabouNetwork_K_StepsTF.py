@@ -48,7 +48,6 @@ class MarabouNetwork_K_StepsTF(MarabouNetwork.MarabouNetwork):
         self.readFromPb(filename, inputNames, outputName, savedModel, savedModelTags)
         self.processBiasAddRelations()
 
-
     def clear(self):
         """
         Reset values to represent empty network
@@ -109,6 +108,7 @@ class MarabouNetwork_K_StepsTF(MarabouNetwork.MarabouNetwork):
             print(inputOps)
             print("________________________________")
         else: # If there is just one placeholder, use it as input
+            # TODO - NOT SUPPORTED YET
             ops = self.sess.graph.get_operations()
             placeholders = [x for x in ops if x.node_def.op == 'Placeholder']
             inputOps = placeholders
@@ -117,8 +117,8 @@ class MarabouNetwork_K_StepsTF(MarabouNetwork.MarabouNetwork):
             for j in range(self.K):
                 outputOp.append(self.sessions[j].graph.get_operation_by_name(outputName))
         else: # Assume that the last operation is the output
+            # TODO - NOT SUPPORTED YET
             outputOp = self.sess.graph.get_operations()[-1]
-
         self.inputVars = []
         for j in range(0, self.K):
             self.setInputOps(j,inputOps[j])
@@ -134,7 +134,7 @@ class MarabouNetwork_K_StepsTF(MarabouNetwork.MarabouNetwork):
             assert self.foundnInputFlags == len(inputOps[j])
         ### END generating equations ###
 
-    def setInputOps(self,idx ,ops):
+    def setInputOps(self, idx, ops):
         """
         Function to set input operations
         Arguments:
@@ -515,7 +515,7 @@ class MarabouNetwork_K_StepsTF(MarabouNetwork.MarabouNetwork):
                     e.setScalar(0.0)
                     self.addEquation(e)
 
-    def reluEquations(self,idx, op):
+    def reluEquations(self, idx, op):
         """
         Function to generate equations corresponding to pointwise Relu
         Arguments:
