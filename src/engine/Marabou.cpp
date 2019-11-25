@@ -22,6 +22,10 @@
 #include "PropertyParser.h"
 #include "MarabouError.h"
 
+#ifdef _WIN32
+#undef ERROR
+#endif
+
 Marabou::Marabou( unsigned verbosity )
     : _acasParser( NULL )
     , _engine( verbosity )
@@ -104,16 +108,16 @@ void Marabou::displayResults( unsigned long long microSecondsElapsed ) const
     else if ( result == Engine::SAT )
     {
         resultString = "SAT";
-        printf( "SAT\n\n" );
+        printf( "SAT\n" );
 
         printf( "Input assignment:\n" );
         for ( unsigned i = 0; i < _inputQuery.getNumInputVariables(); ++i )
-            printf( "\tx%u = %8.4lf\n", i, _inputQuery.getSolutionValue( _inputQuery.inputVariableByIndex( i ) ) );
+            printf( "\tx%u = %lf\n", i, _inputQuery.getSolutionValue( _inputQuery.inputVariableByIndex( i ) ) );
 
         printf( "\n" );
         printf( "Output:\n" );
         for ( unsigned i = 0; i < _inputQuery.getNumOutputVariables(); ++i )
-            printf( "\ty%u = %8.4lf\n", i, _inputQuery.getSolutionValue( _inputQuery.outputVariableByIndex( i ) ) );
+            printf( "\ty%u = %lf\n", i, _inputQuery.getSolutionValue( _inputQuery.outputVariableByIndex( i ) ) );
         printf( "\n" );
     }
     else if ( result == Engine::TIMEOUT )
