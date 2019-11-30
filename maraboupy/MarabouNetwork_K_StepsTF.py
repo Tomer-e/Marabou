@@ -1,6 +1,5 @@
 '''
 /* *******************                                                        */
-/*! \file MarabouNetworkTF.py
  ** \verbatim
  ** Top contributors (to current version):
  **   Christopher Lazarus, Shantanu Thakoor, Chelsea Sidrane
@@ -122,7 +121,6 @@ class MarabouNetwork_K_StepsTF(MarabouNetwork.MarabouNetwork):
         self.inputVars = []
         for j in range(0, self.K):
             self.setInputOps(j,inputOps[j])
-
         for j in range(0, self.K):
             self.setOutputOp(j,outputOp[j])
         ### END finding input/output operations ###
@@ -146,16 +144,7 @@ class MarabouNetwork_K_StepsTF(MarabouNetwork.MarabouNetwork):
                 self.shapeMap[idx][op] = shape
             except:
                 self.shapeMap[idx][op] = [None]
-            #
-            # self.inputVars += self.opToVarArray(idx,op)
-            # TODO: fix this ugly code
-            for i in self.opToVarArray(idx,op):
-                for input in i:
-                    self.inputVars.append(input)
-            # if self.inputVars == []:
-            #     self.inputVars.append(self.opToVarArray(idx,op))
-            # else:
-            #     self.inputVars = [np.ndarray.astype(np.concatenate([self.inputVars[0][0],self.opToVarArray(idx,op)[0]],axis = 0),np.int32)]
+            self.inputVars.append(self.opToVarArray(idx,op))
         self.inputOps[idx] = ops
 
 

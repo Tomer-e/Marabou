@@ -43,8 +43,9 @@ class MarabouNetwork:
         self.upperBounds = dict()
         self.inputVars = []
         self.outputVars = np.array([])
+        self.userDefineInputVars = []
 
-    def getNewVariable(self):
+    def getNewVariable (self):
         """
         Function to request allocation of new variable
 
@@ -136,17 +137,23 @@ class MarabouNetwork:
         """
         ipq = MarabouCore.InputQuery()
         ipq.setNumberOfVariables(self.numVars)
-
+        print ("num vars = ", self.numVars)
         i = 0
         for inputVarArray in self.inputVars:
             for inputVar in inputVarArray.flatten():
                 ipq.markInputVariable(inputVar, i)
                 i+=1
+                print("inputVar",inputVar)
+        for inputVar in self.userDefineInputVars:
+            ipq.markInputVariable(inputVar, i)
+            i += 1
+            print("userDefineInputVar", inputVar)
 
         i = 0
         for outputVar in self.outputVars.flatten():
             ipq.markOutputVariable(outputVar, i)
             i+=1
+            print("outputVar", outputVar)
 
         for e in self.equList:
             eq = MarabouCore.Equation(e.EquationType)
