@@ -139,11 +139,12 @@ class MarabouNetwork:
         ipq.setNumberOfVariables(self.numVars)
         print ("num vars = ", self.numVars)
         i = 0
-        for inputVarArray in self.inputVars:
-            for inputVar in inputVarArray.flatten():
-                ipq.markInputVariable(inputVar, i)
-                i+=1
-                print("inputVar",inputVar)
+        # TODO: this is necessary, so IF should be added (if user define -> use the userdefined, else use regular inputs)
+        # for inputVarArray in self.inputVars:
+        #     for inputVar in inputVarArray.flatten():
+        #         ipq.markInputVariable(inputVar, i)
+        #         i+=1
+        #         print("inputVar",inputVar)
         for inputVar in self.userDefineInputVars:
             ipq.markInputVariable(inputVar, i)
             i += 1
