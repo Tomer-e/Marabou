@@ -390,12 +390,12 @@ class MarabouNetwork_K_StepsTF(MarabouNetwork.MarabouNetwork):
         """
 
         input_ops = [i.op for i in op.inputs]
-        # print (input_ops)
+        print (input_ops)
         assert len(input_ops) == 2
         input1 = input_ops[0]
         input2 = input_ops[1]
         assert (self.isVariable(input1) and not self.isVariable(input2)) or (not self.isVariable(input1) and self.isVariable(input2))
-        curVars = self.getValues(op).reshape(-1)
+        curVars = self.getValues(idx, op).reshape(-1)
         # print(curVars)
         prevVars1 = self.getValues(idx, input1).reshape(-1)
         # print(prevVars1)
