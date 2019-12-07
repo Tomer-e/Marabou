@@ -365,12 +365,11 @@ class MarabouNetwork_K_StepsTF(MarabouNetwork.MarabouNetwork):
         input2 = input_ops[1]
         assert self.isVariable(input1)
         if self.isVariable(input2):
-            curVars = self.getValues(op).reshape(-1)
+            curVars = self.getValues(idx,op).reshape(-1)
             prevVars1 = self.getValues(idx,input1).reshape(-1)
             prevVars2 = self.getValues(idx,input2).reshape(-1)
             assert len(prevVars1) == len(prevVars2)
             assert len(curVars) == len(prevVars1)
-            # print("addEquations: add curVars len = ", len(curVars))
             for i in range(len(curVars)):
                 e = MarabouUtils.Equation()
                 e.addAddend(1, prevVars1[i])
@@ -563,11 +562,14 @@ class MarabouNetwork_K_StepsTF(MarabouNetwork.MarabouNetwork):
         #     print("values =", op.values())
         #     print(op)
         cur_op = op.node_def.op
-
         if op.node_def.op in ['Identity', 'Reshape', 'Pack', 'Placeholder', 'Const', 'ConcatV2', 'Shape', 'StridedSlice','Split']:
             # if (op == self.outputOp):
             #     self.dummyEq(op)
             return
+
+        print("cur op == ",cur_op)
+        curVars = self.getValues(idx, op)
+        print("vars ==", curVars)
         if op.node_def.op == 'MatMul':
             self.matMulEquations(idx, op)
         elif op.node_def.op == 'BiasAdd':
