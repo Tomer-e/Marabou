@@ -131,7 +131,11 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
                 self.shapeMap[op] = shape
             except:
                 self.shapeMap[op] = [None]
-            self.inputVars.append(self.opToVarArray(op))
+            if op.node_def.op in ['StridedSlice']:
+                print("StridedSlice detected")
+                self.inputVars.append(self.opToVarArray_s(op))
+            else:
+                self.inputVars.append(self.opToVarArray(op))
         self.inputOps = ops
 
 
@@ -176,6 +180,41 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         assert all([np.equal(np.mod(i, 1), 0) for i in v.reshape(-1)]) # check if integers
         return v
 
+
+    def opToVarArray_s(self, x):
+        """
+        Function to find variables corresponding to operation
+        Arguments:
+            x: (tf.op) the operation to find variables for
+        Returns:
+            v: (np array) of variable numbers, in same shape as x
+        """
+        if x in self.varMap:
+            print (self.varMap[x])
+            return self.varMap[x]
+
+
+        print ("****** opToVarArray_s *********")
+        ### Find number of new variables needed ###
+        if x in self.shapeMap:
+            print ("in shape map")
+            shape = self.shapeMap[x]
+            shape = [a if a is not None else 1 for a in shape]
+            shape.append(1)
+            print("_____________________________________________shape1_____________________________________________", shape)
+        else:
+            shape = [a if a is not None else 1 for a in x.outputs[0].get_shape().as_list()]
+            print("_____________________________________________shape2_____________________________________________",shape)
+        size = 1
+        for a in shape:
+            size*=a
+        ### END finding number of new variables ###
+
+        v = np.array([self.getNewVariable() for _ in range(size)]).reshape(shape)
+        self.varMap[x] = v
+        assert all([np.equal(np.mod(i, 1), 0) for i in v.reshape(-1)]) # check if integers
+        return v
+
     def getValues(self, op):
         """
         Function to find underlying constants/variables representing operation
@@ -184,9 +223,16 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         Returns:
             values: (np array) of scalars or variable numbers depending on op
         """
+        print ("TOMER", op.node_def.op)
         input_ops = [i.op for i in op.inputs]
         
         ### Operations not requiring new variables ###
+        # if op.node_def.op in ['StridedSlice']:
+        #     print ("##############################################################")
+        #     print(op)
+        #     print ("##############################################################")
+        #
+        #     return self.StridedSlice_handler(op)
         if op.node_def.op == 'Identity':
             return self.getValues(input_ops[0])
         if op.node_def.op in ['Reshape']:
@@ -208,11 +254,13 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             tproto = op.node_def.attr['value'].tensor
             return tensor_util.MakeNdarray(tproto)
         ### END operations not requiring new variables ###
-
         if op.node_def.op in ['MatMul', 'BiasAdd', 'Add', 'Sub', 'Relu', 'MaxPool', 'Conv2D', 'Placeholder']:
             # need to create variables for these
             return self.opToVarArray(op)
-
+        if op.node_def.op in ['StridedSlice']:
+            return self.opToVarArray_s(op)
+        print("HERE5")
+        print(op.node_def.op)
         raise NotImplementedError
 
     def isVariable(self, op):
@@ -225,6 +273,8 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         """
         if op.node_def.op == 'Placeholder':
             return True
+        if op.node_def.op == 'StridedSlice':
+            return True
         if op.node_def.op == 'Const':
             return False
         return any([self.isVariable(i.op) for i in op.inputs])
@@ -235,11 +285,14 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         Arguments:
             op: (tf.op) representing matrix multiplication operation
         """
-
+        print ("MAT MUL")
         ### Get variables and constants of inputs ###
         input_ops = [i.op for i in op.inputs]
+        print("input_ops:",input_ops)
         prevValues = [self.getValues(i) for i in input_ops]
+        print("prevValues:", prevValues)
         curValues = self.getValues(op)
+        print("curValues:", curValues)
         aTranspose = op.node_def.attr['transpose_a'].b
         bTranspose = op.node_def.attr['transpose_b'].b
         A = prevValues[0]
@@ -248,6 +301,14 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             A = np.transpose(A)
         if bTranspose:
             B = np.transpose(B)
+        print("A shape = ",A.shape)
+        print("A shape[0] = ",A.shape[0])
+        print("A shape[1] = ",A.shape[1])
+        print ("B shape = ",B.shape)
+        print ("B shape[0] = ",B.shape[0])
+        print ("B shape[1] = ",B.shape[1])
+
+        print ("curValues shape = ",curValues.shape)
         assert (A.shape[0], B.shape[1]) == curValues.shape
         assert A.shape[1] == B.shape[0]
         m, n = curValues.shape
@@ -403,6 +464,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             pad_top  = ((out_height - 1) * strides[1] + filter_height - in_height + 1) // 2
             pad_left = ((out_width - 1) * strides[2] + filter_width - in_width + 1) // 2
         else:
+            print("HERE1")
             raise NotImplementedError
         ### END getting inputs ###
 
@@ -465,6 +527,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         validPadding = op.node_def.attr['padding'].s == b'VALID'
         if not validPadding:
             raise NotImplementedError
+
         prevValues = prevValues[0]
         strides = list(op.node_def.attr['strides'].list.i)
         ksize = list(op.node_def.attr['ksize'].list.i)
@@ -484,6 +547,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         Arguments:
             op: (tf.op) for which to generate equations
         """
+
         if op.node_def.op in ['Identity', 'Reshape', 'Pack', 'Placeholder', 'Const', 'ConcatV2', 'Shape', 'StridedSlice']:
             return
         if op.node_def.op == 'MatMul':
@@ -502,8 +566,8 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             self.maxpoolEquations(op)
         else:
             print("Operation ", str(op.node_def.op), " not implemented")
+            print ("HERE3")
             raise NotImplementedError
-
     def makeGraphEquations(self, op):
         """
         Function to generate equations for network necessary to calculate op
@@ -512,6 +576,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         """
         if op in self.madeGraphEquations:
             return
+        print("op", op)
         self.madeGraphEquations += [op]
         if op in self.inputOps:
             self.foundnInputFlags += 1
