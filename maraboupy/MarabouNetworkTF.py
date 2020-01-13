@@ -133,6 +133,8 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
                 self.shapeMap[op] = [None]
             if op.node_def.op in ['StridedSlice']:
                 print("StridedSlice detected")
+                print(op.outputs)
+
                 self.inputVars.append(self.opToVarArray_s(op))
             else:
                 self.inputVars.append(self.opToVarArray(op))
@@ -147,6 +149,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         """
         try:
             shape = tuple(op.outputs[0].shape.as_list())
+            print(op.outputs)
             self.shapeMap[op] = shape
         except:
             self.shapeMap[op] = [None]
@@ -190,7 +193,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             v: (np array) of variable numbers, in same shape as x
         """
         if x in self.varMap:
-            print (self.varMap[x])
+            # print (self.varMap[x])
             return self.varMap[x]
 
 
@@ -199,8 +202,9 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         if x in self.shapeMap:
             print ("in shape map")
             shape = self.shapeMap[x]
+            print (shape)
             shape = [a if a is not None else 1 for a in shape]
-            shape.append(1)
+            shape.append(8)
             print("_____________________________________________shape1_____________________________________________", shape)
         else:
             shape = [a if a is not None else 1 for a in x.outputs[0].get_shape().as_list()]
@@ -223,7 +227,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         Returns:
             values: (np array) of scalars or variable numbers depending on op
         """
-        print ("TOMER", op.node_def.op)
+        # print ("TOMER", op.node_def.op)
         input_ops = [i.op for i in op.inputs]
         
         ### Operations not requiring new variables ###
@@ -250,17 +254,28 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             values = prevValues[0:2]
             axis = prevValues[2]
             return np.concatenate(values, axis=axis)
+        if op.node_def.op == 'Split':
+            # print("--------------------------------------Split--------------------------------------")
+            cur_op = op.node_def.op
+            prevValues = [self.getValues(i) for i in input_ops]
+            # print(np.split(prevValues[1], indices_or_sections=2, axis = 1))
+            return np.split(prevValues[1], indices_or_sections=2, axis = 1)
         if op.node_def.op == 'Const':
             tproto = op.node_def.attr['value'].tensor
             return tensor_util.MakeNdarray(tproto)
+        # if op.node_def.op == 'ExpandDims':
+        #     print ("ExpandDims")
+        #     prevValues = [self.getValues(i) for i in input_ops]
+        #     print (prevValues[0].shape)
+
         ### END operations not requiring new variables ###
-        if op.node_def.op in ['MatMul', 'BiasAdd', 'Add', 'Sub', 'Relu', 'MaxPool', 'Conv2D', 'Placeholder']:
+        if op.node_def.op in ['MatMul', 'BiasAdd', 'Add', 'Sub', 'Relu', 'MaxPool', 'Conv2D', 'Placeholder','Mul']:
             # need to create variables for these
             return self.opToVarArray(op)
         if op.node_def.op in ['StridedSlice']:
             return self.opToVarArray_s(op)
         print("HERE5")
-        print(op.node_def.op)
+        # print(op.node_def.op)
         raise NotImplementedError
 
     def isVariable(self, op):
@@ -285,14 +300,14 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         Arguments:
             op: (tf.op) representing matrix multiplication operation
         """
-        print ("MAT MUL")
+        # print ("MAT MUL")
         ### Get variables and constants of inputs ###
         input_ops = [i.op for i in op.inputs]
-        print("input_ops:",input_ops)
+        # print("input_ops:",input_ops)
         prevValues = [self.getValues(i) for i in input_ops]
-        print("prevValues:", prevValues)
+        # print("prevValues:", prevValues)
         curValues = self.getValues(op)
-        print("curValues:", curValues)
+        # print("curValues:", curValues)
         aTranspose = op.node_def.attr['transpose_a'].b
         bTranspose = op.node_def.attr['transpose_b'].b
         A = prevValues[0]
@@ -301,14 +316,14 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             A = np.transpose(A)
         if bTranspose:
             B = np.transpose(B)
-        print("A shape = ",A.shape)
-        print("A shape[0] = ",A.shape[0])
-        print("A shape[1] = ",A.shape[1])
-        print ("B shape = ",B.shape)
-        print ("B shape[0] = ",B.shape[0])
-        print ("B shape[1] = ",B.shape[1])
-
-        print ("curValues shape = ",curValues.shape)
+        # print("A shape = ",A.shape)
+        # print("A shape[0] = ",A.shape[0])
+        # print("A shape[1] = ",A.shape[1])
+        # print ("B shape = ",B.shape)
+        # print ("B shape[0] = ",B.shape[0])
+        # print ("B shape[1] = ",B.shape[1])
+        #
+        # print ("curValues shape = ",curValues.shape)
         assert (A.shape[0], B.shape[1]) == curValues.shape
         assert A.shape[1] == B.shape[0]
         m, n = curValues.shape
@@ -407,6 +422,79 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
                 self.addEquation(e)
         else:
             self.biasAddEquations(op)
+
+
+    def mulEquations(self, op):
+        """
+        Function to generate equations corresponding to mul
+        Arguments:
+            op: (tf.op) representing  mul operation
+        """
+
+        input_ops = [i.op for i in op.inputs]
+        # print (input_ops)
+        assert len(input_ops) == 2
+        input1 = input_ops[0]
+        input2 = input_ops[1]
+        assert (self.isVariable(input1) and not self.isVariable(input2)) or (not self.isVariable(input1) and self.isVariable(input2))
+        curVars = self.getValues(op).reshape(-1)
+        # print(curVars)
+        prevVars1 = self.getValues(input1).reshape(-1)
+        # print(prevVars1)
+        prevVars2 = self.getValues(input2).reshape(-1)
+        # print(prevVars2)
+
+        assert len(prevVars1) == len(prevVars2)
+        assert len(curVars) == len(prevVars1)
+        # print ("mul curVars len = ",len(curVars))
+        if self.isVariable(input1):
+            for i in range(len(curVars)):
+                e = MarabouUtils.Equation()
+                e.addAddend(prevVars2[i], prevVars1[i])
+                e.addAddend(-1, curVars[i])
+                e.setScalar(0.0)
+                self.addEquation(e)
+        else: #self.isVariable(input2)
+            for i in range(len(curVars)):
+                e = MarabouUtils.Equation()
+                e.addAddend(prevVars1[i], prevVars2[i])
+                e.addAddend(-1, curVars[i])
+                e.setScalar(0.0)
+                self.addEquation(e)
+
+    def mulEquations2(self, op):
+        """
+        Function to generate equations corresponding to mul
+        Arguments:
+            op: (tf.op) representing  mul operation
+        """
+
+        ### Get variables and constants of inputs ###
+        input_ops = [i.op for i in op.inputs]
+        assert len(input_ops) == 2
+        # print ("input_ops",input_ops)
+        prevValues = [self.getValues(i) for i in input_ops]
+        # print("prevValues" ,prevValues)
+        curValues = self.getValues(op)
+        # print("curValues" ,curValues)
+
+        prevVars = prevValues[0].reshape(-1)
+        prevConsts = prevValues[1].reshape(-1)
+        # print("prevConsts[0] =",prevConsts[0])
+        # print("prevConsts =",prevConsts)
+        # broadcasting
+        # prevConsts = np.tile(prevConsts, len(prevVars) // len(prevConsts))
+        curVars = curValues.reshape(-1)
+        assert len(prevVars) == len(curVars) and len(curVars) == len(prevConsts)
+        ### END getting inputs ###
+        # print ("mul curVars len = ",len(curVars))
+        for i in range(len(prevVars)):
+            e = MarabouUtils.Equation()
+            e.addAddend(prevConsts[i], prevVars[i])
+            e.addAddend(-1, curVars[i])
+            e.setScalar(0.0)
+            self.addEquation(e)
+
 
     def subEquations(self, op): 
         """
@@ -548,7 +636,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             op: (tf.op) for which to generate equations
         """
 
-        if op.node_def.op in ['Identity', 'Reshape', 'Pack', 'Placeholder', 'Const', 'ConcatV2', 'Shape', 'StridedSlice']:
+        if op.node_def.op in ['Identity', 'Reshape', 'Pack', 'Placeholder', 'Const', 'ConcatV2', 'Shape', 'StridedSlice','ExpandDims','Split']:
             return
         if op.node_def.op == 'MatMul':
             self.matMulEquations(op)
@@ -564,6 +652,8 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             self.reluEquations(op)
         elif op.node_def.op == 'MaxPool':
             self.maxpoolEquations(op)
+        elif op.node_def.op == 'Mul':
+            self.mulEquations(op)
         else:
             print("Operation ", str(op.node_def.op), " not implemented")
             print ("HERE3")
@@ -576,7 +666,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         """
         if op in self.madeGraphEquations:
             return
-        print("op", op)
+        # print("op", op)
         self.madeGraphEquations += [op]
         if op in self.inputOps:
             self.foundnInputFlags += 1
