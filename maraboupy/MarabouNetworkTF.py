@@ -131,13 +131,11 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
                 self.shapeMap[op] = shape
             except:
                 self.shapeMap[op] = [None]
-            if op.node_def.op in ['StridedSlice']:
-                print("StridedSlice detected")
-                print(op.outputs)
 
-                self.inputVars.append(self.opToVarArray_s(op))
-            else:
-                self.inputVars.append(self.opToVarArray(op))
+                ## TODO: this is only for pensieve, the number of inputs to the network is unknown for some reason
+                if op.name =="actor/InputData/X" or op.name == "critic/InputData/X":
+                    self.shapeMap[op] = (None, 6, 8)
+            self.inputVars.append(self.opToVarArray(op))
         self.inputOps = ops
 
 
@@ -149,7 +147,6 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         """
         try:
             shape = tuple(op.outputs[0].shape.as_list())
-            print(op.outputs)
             self.shapeMap[op] = shape
         except:
             self.shapeMap[op] = [None]
@@ -184,40 +181,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         return v
 
 
-    def opToVarArray_s(self, x):
-        """
-        Function to find variables corresponding to operation
-        Arguments:
-            x: (tf.op) the operation to find variables for
-        Returns:
-            v: (np array) of variable numbers, in same shape as x
-        """
-        if x in self.varMap:
-            # print (self.varMap[x])
-            return self.varMap[x]
 
-
-        print ("****** opToVarArray_s *********")
-        ### Find number of new variables needed ###
-        if x in self.shapeMap:
-            print ("in shape map")
-            shape = self.shapeMap[x]
-            print (shape)
-            shape = [a if a is not None else 1 for a in shape]
-            shape.append(8)
-            print("_____________________________________________shape1_____________________________________________", shape)
-        else:
-            shape = [a if a is not None else 1 for a in x.outputs[0].get_shape().as_list()]
-            print("_____________________________________________shape2_____________________________________________",shape)
-        size = 1
-        for a in shape:
-            size*=a
-        ### END finding number of new variables ###
-
-        v = np.array([self.getNewVariable() for _ in range(size)]).reshape(shape)
-        self.varMap[x] = v
-        assert all([np.equal(np.mod(i, 1), 0) for i in v.reshape(-1)]) # check if integers
-        return v
 
     def getValues(self, op):
         """
@@ -227,18 +191,54 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         Returns:
             values: (np array) of scalars or variable numbers depending on op
         """
-        # print ("TOMER", op.node_def.op)
         input_ops = [i.op for i in op.inputs]
-        
         ### Operations not requiring new variables ###
-        # if op.node_def.op in ['StridedSlice']:
-        #     print ("##############################################################")
-        #     print(op)
-        #     print ("##############################################################")
-        #
-        #     return self.StridedSlice_handler(op)
         if op.node_def.op == 'Identity':
             return self.getValues(input_ops[0])
+        if op.node_def.op == 'Squeeze':
+            print ("Squeeze inputs_ops = ",input_ops)
+            prevValues = self.getValues(input_ops[0])
+            print("Squeeze prevValues = ", prevValues)
+            print("Squeeze prevValues.shape = ", prevValues.shape)
+            squeeze_dims = op.node_def.attr["squeeze_dims"].list.i
+            print("Squeeze squeeze_dims = ", squeeze_dims)
+            axis = op.node_def.attr["axis"].list.i
+            print("Squeeze axis = ", axis)
+            assert (len(axis) == 0 or len (squeeze_dims) == 0)
+            prevValues_shape = prevValues.shape
+            squeeze = axis if len(axis)> 0 else squeeze_dims
+            new_shape = []
+            i = 0
+            for val in prevValues_shape:
+                print("i",i , "val", val)
+                if i in squeeze:
+                    print("removing",i,"val",val)
+                    i+=1
+                    continue
+                new_shape.append(val)
+                i+=1
+            print(new_shape)
+            # TODO: check about "negative number for axis" (counted backward from the end)
+            return prevValues.reshape(new_shape)
+        if op.node_def.op == 'ExpandDims':
+            # print ("ExpandDims inputs_ops = ",input_ops[1])
+            dim = self.getValues(input_ops[1])
+            prevValues = self.getValues(input_ops[0])
+            print ("ExpandDims inputs[1] (dim) = ",dim)
+            print ("ExpandDims inputs[0] (values) = ",prevValues)
+            print ("ExpandDims values shape = ",prevValues.shape)
+            prevValues_shape = prevValues.shape
+            print ("ExpandDims op.inputs[0].shape.dims = ",op.inputs[0].shape.dims)
+            new_shape = []
+            i = 0
+            for val in prevValues_shape:
+                if i==dim:
+                    new_shape.append(1)
+                new_shape.append(val)
+                i+=1
+            print(new_shape)
+            # TODO:need also to support - "if you specify a negative number for axis it is counted backward from the end"
+            return prevValues.reshape(new_shape)
         if op.node_def.op in ['Reshape']:
             if input_ops[1].node_def.op == 'Pack':
                 prevValues = self.getValues(input_ops[0])
@@ -251,8 +251,13 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             return np.reshape(prevValues[0], shape)
         if op.node_def.op == 'ConcatV2':
             prevValues = [self.getValues(i) for i in input_ops]
-            values = prevValues[0:2]
-            axis = prevValues[2]
+            N = op.node_def.attr["N"].i
+            values = prevValues[0:N]
+            print("ConcatV2 values = ", prevValues)
+            print( "concat attr.N =  " , N)
+
+            axis = prevValues[N]
+            # print ("axis = ",axis)
             return np.concatenate(values, axis=axis)
         if op.node_def.op == 'Split':
             # print("--------------------------------------Split--------------------------------------")
@@ -263,19 +268,107 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         if op.node_def.op == 'Const':
             tproto = op.node_def.attr['value'].tensor
             return tensor_util.MakeNdarray(tproto)
-        # if op.node_def.op == 'ExpandDims':
-        #     print ("ExpandDims")
-        #     prevValues = [self.getValues(i) for i in input_ops]
-        #     print (prevValues[0].shape)
 
+        if op.node_def.op in ['StridedSlice']:
+
+            prevValues = [self.getValues(i) for i in input_ops]
+
+            assert (len(prevValues) == 4) ## or len(prevValues) == 3)
+
+            input_ = prevValues[0]
+            print(tf.shape(op.inputs[0]))
+            print("inputs (actual name = "+input_ops[0].name+")")
+            print(input_)
+            input_shape = input_.shape
+            print(input_shape)
+
+            begin= prevValues[1]
+            print("begin (actual name = "+input_ops[1].name+")")
+            print(begin)
+            assert (len(begin) == 3) # Todo: support any shape
+            end = prevValues[2]
+            print("end (actual name = " + input_ops[2].name + ")")
+            print(end)
+            assert (len(end) == 3)
+
+            strides = prevValues[3]
+            print("strides (actual name = " + input_ops[3].name + ")")
+            print(strides)
+            assert (len(strides) == 3)
+
+            for stride in strides:
+                assert (stride == 1)  # only stride = 1 is supported
+
+            # values = input_[begin[0]:end[0],begin[1]:end[1],begin[2]:end[2]]
+            # print(values)
+            def to_reversed_bit_array(num):
+                return (format(num, '03b')[::-1])
+
+
+            begin_mask = op.node_def.attr["begin_mask"].i
+            print ("begin_mask =",begin_mask)
+            begin_mask_ba = to_reversed_bit_array(begin_mask)
+            print("begin_mask =", begin_mask)
+
+
+            ellipsis_mask = op.node_def.attr["ellipsis_mask"].i
+            print ("ellipsis_mask =",ellipsis_mask)
+            ellipsis_mask_ba = to_reversed_bit_array(ellipsis_mask)
+            print("ellipsis_mask_ba =", ellipsis_mask_ba)
+
+            end_mask = op.node_def.attr["end_mask"].i
+            print ("end_mask =",end_mask)
+            end_mask_ba = to_reversed_bit_array(end_mask)
+            print("end_mask_ba =", end_mask_ba)
+
+            new_axis_mask = op.node_def.attr["new_axis_mask"].i
+            print ("new_axis_mask =",new_axis_mask)
+            new_axis_mask_ba = to_reversed_bit_array(new_axis_mask)
+            print("new_axis_mask_ba =", new_axis_mask_ba)
+
+            shrink_axis_mask = op.node_def.attr["shrink_axis_mask"].i
+            print ("shrink_axis_mask =",shrink_axis_mask)
+            shrink_axis_mask_ba = to_reversed_bit_array(shrink_axis_mask)
+            print("shrink_axis_mask_ba =", shrink_axis_mask_ba)
+
+            print()
+
+            actual_begin = begin.copy()
+            actual_end = end.copy()
+            dims = len(input_shape)
+            for i in range(len(begin)):
+                # if begin[i]<0:
+                #     actual_end[i] =  len(begin) + begin[i]
+                # if end[i]<0:
+                #     actual_begin[i] =  len(end) + end[i]
+
+                if begin_mask_ba[i] == '1':
+                    actual_begin[i] = 0
+                if end_mask_ba[i] == '1':
+                    actual_end[i] = input_shape[i]
+                if shrink_axis_mask_ba[i] == '1':
+                    dims-=1
+                    if begin[i]>=0:
+                        actual_begin = begin[i]
+                        actual_end = actual_begin[i] + 1
+                    else:
+                        actual_begin[i] = input_shape[i] + begin[i]
+                        actual_end[i] = actual_begin[i] + 1
+
+            print("actual_begin",actual_begin)
+            print("actual_end",actual_end)
+            values = input_[actual_begin[0]:actual_end[0],actual_begin[1]:actual_end[1],actual_begin[2]:actual_end[2]]
+            print(values)
+            if dims == 3: return values
+            if dims == 2: return values[0]
+            if dims == 1: return values[0][0]
+            if dims == 0: return values[0][0][0]
+        # return self.getValues(input_ops[0])
         ### END operations not requiring new variables ###
         if op.node_def.op in ['MatMul', 'BiasAdd', 'Add', 'Sub', 'Relu', 'MaxPool', 'Conv2D', 'Placeholder','Mul']:
             # need to create variables for these
             return self.opToVarArray(op)
-        if op.node_def.op in ['StridedSlice']:
-            return self.opToVarArray_s(op)
-        print("HERE5")
-        # print(op.node_def.op)
+
         raise NotImplementedError
 
     def isVariable(self, op):
@@ -288,8 +381,6 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         """
         if op.node_def.op == 'Placeholder':
             return True
-        if op.node_def.op == 'StridedSlice':
-            return True
         if op.node_def.op == 'Const':
             return False
         return any([self.isVariable(i.op) for i in op.inputs])
@@ -300,14 +391,11 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         Arguments:
             op: (tf.op) representing matrix multiplication operation
         """
-        # print ("MAT MUL")
+
         ### Get variables and constants of inputs ###
         input_ops = [i.op for i in op.inputs]
-        # print("input_ops:",input_ops)
         prevValues = [self.getValues(i) for i in input_ops]
-        # print("prevValues:", prevValues)
         curValues = self.getValues(op)
-        # print("curValues:", curValues)
         aTranspose = op.node_def.attr['transpose_a'].b
         bTranspose = op.node_def.attr['transpose_b'].b
         A = prevValues[0]
@@ -316,14 +404,6 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             A = np.transpose(A)
         if bTranspose:
             B = np.transpose(B)
-        # print("A shape = ",A.shape)
-        # print("A shape[0] = ",A.shape[0])
-        # print("A shape[1] = ",A.shape[1])
-        # print ("B shape = ",B.shape)
-        # print ("B shape[0] = ",B.shape[0])
-        # print ("B shape[1] = ",B.shape[1])
-        #
-        # print ("curValues shape = ",curValues.shape)
         assert (A.shape[0], B.shape[1]) == curValues.shape
         assert A.shape[1] == B.shape[0]
         m, n = curValues.shape
@@ -552,7 +632,6 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             pad_top  = ((out_height - 1) * strides[1] + filter_height - in_height + 1) // 2
             pad_left = ((out_width - 1) * strides[2] + filter_width - in_width + 1) // 2
         else:
-            print("HERE1")
             raise NotImplementedError
         ### END getting inputs ###
 
@@ -615,7 +694,6 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         validPadding = op.node_def.attr['padding'].s == b'VALID'
         if not validPadding:
             raise NotImplementedError
-
         prevValues = prevValues[0]
         strides = list(op.node_def.attr['strides'].list.i)
         ksize = list(op.node_def.attr['ksize'].list.i)
@@ -636,7 +714,7 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             op: (tf.op) for which to generate equations
         """
 
-        if op.node_def.op in ['Identity', 'Reshape', 'Pack', 'Placeholder', 'Const', 'ConcatV2', 'Shape', 'StridedSlice','ExpandDims','Split']:
+        if op.node_def.op in ['Identity', 'Reshape', 'Pack', 'Placeholder', 'Const', 'ConcatV2', 'Shape', 'StridedSlice','ExpandDims','Squeeze','Split']:
             return
         if op.node_def.op == 'MatMul':
             self.matMulEquations(op)
@@ -656,7 +734,6 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
             self.mulEquations(op)
         else:
             print("Operation ", str(op.node_def.op), " not implemented")
-            print ("HERE3")
             raise NotImplementedError
     def makeGraphEquations(self, op):
         """
@@ -666,7 +743,6 @@ class MarabouNetworkTF(MarabouNetwork.MarabouNetwork):
         """
         if op in self.madeGraphEquations:
             return
-        # print("op", op)
         self.madeGraphEquations += [op]
         if op in self.inputOps:
             self.foundnInputFlags += 1
